@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useToast } from "@/components/ui/use-toast"
+import { getStoredNCs, saveStoredNCs, pushNotification, type NonConformance, type Severity } from "@/lib/qhse-store"
 
 const ncSchema = z.object({
   title: z.string().min(5, "Le titre doit contenir au moins 5 caractères"),
@@ -53,10 +54,34 @@ export default function NewNCPage() {
 
   const onSubmit = async (data: NCFormData) => {
     setLoading(true)
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    const currentNCs = getStoredNCs()
+    const nextNum = currentNCs.length + 24
+    const newRef = `NC-2026-${String(nextNum).padStart(3, "0")}`
+    const createdNc: NonConformance = {
+      id: `nc-${Date.now()}`,
+      reference: newRef,
+      title: data.title,
+      status: "open",
+      severity: data.severity as Severity,
+      source: data.source,
+      detectedBy: data.detectedBy,
+      assignedTo: "Sophie Moreau",
+      detectedAt: data.detectedAt,
+      dueDate: data.dueDate,
+      description: data.description,
+      immediateAction: data.immediateAction,
+    }
+    saveStoredNCs([createdNc, ...currentNCs])
+    pushNotification({
+      type: "nc",
+      title: `Nouvelle NC : ${newRef}`,
+      body: data.title,
+      time: "À l'instant",
+      href: "/non-conformances",
+    })
     toast({
       title: "Non-conformité créée",
-      description: "La non-conformité a été enregistrée avec succès.",
+      description: `La fiche ${newRef} a été enregistrée avec succès.`,
     })
     router.push("/non-conformances")
   }

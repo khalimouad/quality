@@ -24,34 +24,7 @@ import { Progress } from "@/components/ui/progress"
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table"
 import { useToast } from "@/components/ui/use-toast"
 import { downloadCsv } from "@/lib/csv"
-
-interface CAPA {
-  id: string
-  reference: string
-  title: string
-  type: "corrective" | "preventive"
-  status: "open" | "in_progress" | "verified" | "closed"
-  ncRef: string | null
-  assignedTo: string
-  dueDate: Date
-  progress: number
-  createdAt: Date
-}
-
-const mockCAPAs: CAPA[] = [
-  { id: "1", reference: "CAPA-2024-018", title: "Révision des paramètres de soudage TIG", type: "corrective", status: "in_progress", ncRef: "NC-2024-023", assignedTo: "Jean Dupont", dueDate: new Date("2024-07-15"), progress: 60, createdAt: new Date("2024-06-03") },
-  { id: "2", reference: "CAPA-2024-017", title: "Formation des opérateurs aux EPI", type: "corrective", status: "verified", ncRef: "NC-2024-019", assignedTo: "Marie Martin", dueDate: new Date("2024-06-30"), progress: 100, createdAt: new Date("2024-05-15") },
-  { id: "3", reference: "CAPA-2024-016", title: "Mise en place d'un plan de maintenance préventive", type: "preventive", status: "open", ncRef: null, assignedTo: "Pierre Bernard", dueDate: new Date("2024-08-01"), progress: 15, createdAt: new Date("2024-05-01") },
-  { id: "4", reference: "CAPA-2024-015", title: "Révision procédure de contrôle réception", type: "corrective", status: "closed", ncRef: "NC-2024-020", assignedTo: "Sophie Moreau", dueDate: new Date("2024-06-15"), progress: 100, createdAt: new Date("2024-04-20") },
-  { id: "5", reference: "CAPA-2024-014", title: "Amélioration du système de traçabilité", type: "preventive", status: "in_progress", ncRef: null, assignedTo: "Luc Petit", dueDate: new Date("2024-09-01"), progress: 35, createdAt: new Date("2024-04-01") },
-  { id: "6", reference: "CAPA-2024-013", title: "Remplacement calibres de contrôle endommagés", type: "corrective", status: "in_progress", ncRef: "NC-2024-013", assignedTo: "Marie Martin", dueDate: new Date("2024-07-20"), progress: 45, createdAt: new Date("2024-03-25") },
-  { id: "7", reference: "CAPA-2024-012", title: "Audit des procédures de consignation", type: "preventive", status: "verified", ncRef: "NC-2024-012", assignedTo: "Luc Petit", dueDate: new Date("2024-06-10"), progress: 100, createdAt: new Date("2024-03-15") },
-  { id: "8", reference: "CAPA-2024-011", title: "Mise à jour étiquetage produits finis", type: "corrective", status: "open", ncRef: "NC-2024-017", assignedTo: "Marc Leroy", dueDate: new Date("2024-08-15"), progress: 5, createdAt: new Date("2024-04-22") },
-  { id: "9", reference: "CAPA-2024-010", title: "Plan de surveillance température chambres froides", type: "preventive", status: "in_progress", ncRef: "NC-2024-018", assignedTo: "Claire Durand", dueDate: new Date("2024-07-30"), progress: 70, createdAt: new Date("2024-04-25") },
-  { id: "10", reference: "CAPA-2024-009", title: "Réorganisation zone de stockage", type: "corrective", status: "closed", ncRef: "NC-2024-015", assignedTo: "Sophie Moreau", dueDate: new Date("2024-05-30"), progress: 100, createdAt: new Date("2024-04-08") },
-  { id: "11", reference: "CAPA-2024-008", title: "Procédure d'évaluation fournisseurs", type: "preventive", status: "open", ncRef: "NC-2024-014", assignedTo: "Pierre Bernard", dueDate: new Date("2024-09-15"), progress: 20, createdAt: new Date("2024-03-30") },
-  { id: "12", reference: "CAPA-2024-007", title: "Réparation et étanchéité presse 3", type: "corrective", status: "verified", ncRef: "NC-2024-016", assignedTo: "Jean Dupont", dueDate: new Date("2024-05-15"), progress: 100, createdAt: new Date("2024-04-12") },
-]
+import { useQhseStore, type CAPA } from "@/lib/qhse-store"
 
 const statusLabels: Record<CAPA["status"], string> = {
   open: "Ouverte",
@@ -75,34 +48,75 @@ const statusVariant: Record<CAPA["status"], "destructive" | "warning" | "info" |
 export default function CapaPage() {
   const router = useRouter()
   const { toast } = useToast()
+  const { capas, updateCapaStatus } = useQhseStore()
 
   function handleExport(rows: CAPA[]) {
-    const data = rows.length ? rows : mockCAPAs
-    downloadCsv("capa", ["Référence","Titre","Type","Statut","NC liée","Assigné à","Avancement (%)","Échéance"],
-      data.map((c) => [c.reference, c.title, typeLabels[c.type], statusLabels[c.status], c.ncRef ?? "", c.assignedTo, c.progress, c.dueDate]))
+    const data = rows.length ? rows : capas
+    downloadCsv(
+      "capa",
+      ["Référence", "Titre", "Type", "Statut", "Source liée", "Assigné à", "Avancement (%)", "Échéance"],
+      data.map((c) => [
+        c.reference,
+        c.title,
+        typeLabels[c.type],
+        statusLabels[c.status],
+        c.ncRef || c.auditRef || c.complianceRef || "",
+        c.assignedTo,
+        c.progress,
+        c.dueDate,
+      ])
+    )
     toast({ title: "Export réussi", description: `${data.length} CAPA exportées en CSV.` })
   }
 
-  const total = mockCAPAs.length
-  const open = mockCAPAs.filter((c) => c.status === "open").length
-  const inProgress = mockCAPAs.filter((c) => c.status === "in_progress").length
-  const verifiedClosed = mockCAPAs.filter((c) => ["verified", "closed"].includes(c.status)).length
+  const total = capas.length
+  const open = capas.filter((c) => c.status === "open").length
+  const inProgress = capas.filter((c) => c.status === "in_progress").length
+  const verifiedClosed = capas.filter((c) => ["verified", "closed"].includes(c.status)).length
 
   const columns: DataTableColumn<CAPA>[] = [
     {
       key: "reference",
       header: "Référence",
       sortValue: (c) => c.reference,
-      cell: (c) => <span className="font-mono text-xs text-gray-500">{c.reference}</span>,
+      cell: (c) => <span className="font-mono text-xs font-semibold text-gray-700">{c.reference}</span>,
     },
     {
       key: "title",
-      header: "Titre",
+      header: "Titre & Liaison",
       sortValue: (c) => c.title,
       cell: (c) => (
-        <div className="flex items-center gap-2">
-          <CheckSquare className="h-4 w-4 shrink-0 text-blue-400" />
-          <span className="font-medium text-gray-900">{c.title}</span>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <CheckSquare className="h-4 w-4 shrink-0 text-blue-500" />
+            <span className="font-medium text-gray-900">{c.title}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {c.ncRef && (
+              <Link
+                href="/non-conformances"
+                className="font-mono text-[11px] font-semibold text-red-600 hover:underline bg-red-50 px-1.5 py-0.5 rounded"
+              >
+                NC: {c.ncRef}
+              </Link>
+            )}
+            {c.auditRef && (
+              <Link
+                href="/audits"
+                className="font-mono text-[11px] font-semibold text-purple-600 hover:underline bg-purple-50 px-1.5 py-0.5 rounded"
+              >
+                Audit: {c.auditRef}
+              </Link>
+            )}
+            {c.complianceRef && (
+              <Link
+                href="/compliance"
+                className="font-mono text-[11px] font-semibold text-emerald-600 hover:underline bg-emerald-50 px-1.5 py-0.5 rounded"
+              >
+                Conformité: {c.complianceRef}
+              </Link>
+            )}
+          </div>
         </div>
       ),
     },
@@ -156,7 +170,11 @@ export default function CapaPage() {
       header: "Échéance",
       sortValue: (c) => c.dueDate,
       hideOnMobile: true,
-      cell: (c) => <span className="text-sm text-gray-600">{format(c.dueDate, "dd MMM yyyy", { locale: fr })}</span>,
+      cell: (c) => (
+        <span className="text-sm text-gray-600">
+          {format(new Date(c.dueDate), "dd MMM yyyy", { locale: fr })}
+        </span>
+      ),
     },
   ]
 
@@ -185,11 +203,11 @@ export default function CapaPage() {
       <Card>
         <CardContent className="p-4">
           <DataTable
-            data={mockCAPAs}
+            data={capas}
             columns={columns}
             getRowId={(c) => c.id}
             searchPlaceholder="Rechercher par titre ou référence..."
-            searchAccessor={(c) => `${c.title} ${c.reference} ${c.assignedTo} ${c.ncRef ?? ""}`}
+            searchAccessor={(c) => `${c.title} ${c.reference} ${c.assignedTo} ${c.ncRef ?? ""} ${c.auditRef ?? ""} ${c.complianceRef ?? ""}`}
             filters={[
               {
                 key: "status",
@@ -222,8 +240,15 @@ export default function CapaPage() {
             )}
             bulkActions={[
               { label: "Exporter CSV", icon: ListChecks, onClick: (rows) => handleExport(rows) },
-              { label: "Clôturer", icon: CheckCircle2, onClick: (rows) => { toast({ title: `${rows.length} CAPA clôturées`, description: "Statut mis à jour avec succès." }) }, variant: "outline" },
-              { label: "Supprimer", icon: Trash2, onClick: (rows) => { toast({ title: `${rows.length} CAPA supprimées`, description: "Les enregistrements ont été retirés.", variant: "destructive" }) }, variant: "destructive" },
+              {
+                label: "Clôturer",
+                icon: CheckCircle2,
+                onClick: (rows) => {
+                  rows.forEach((r) => updateCapaStatus(r.id, "closed", 100))
+                  toast({ title: `${rows.length} CAPA clôturées`, description: "Statut mis à jour avec succès dans le store." })
+                },
+                variant: "outline",
+              },
             ]}
             emptyMessage="Aucune action CAPA."
           />

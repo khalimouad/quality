@@ -18,6 +18,8 @@ import {
   AlarmClock,
   Clock,
   CircleDot,
+  Scale,
+  Award,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -28,56 +30,22 @@ import { Progress } from "@/components/ui/progress"
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table"
 import { useToast } from "@/components/ui/use-toast"
 import { downloadCsv } from "@/lib/csv"
-
-type Origin = "CAPA" | "Audit" | "NC" | "Réclamation" | "Risque" | "Amélioration"
-type Priority = "high" | "medium" | "low"
-type ActionStatus = "todo" | "in_progress" | "done" | "overdue"
-
-interface Action {
-  id: string
-  reference: string
-  title: string
-  origin: Origin
-  priority: Priority
-  status: ActionStatus
-  assignedTo: string
-  dueDate: Date
-  progress: number
-}
+import { useQhseStore, type ActionPlanItem, type ActionOrigin, type ActionPriority, type ActionStatus } from "@/lib/qhse-store"
 
 const today = new Date()
 
-const mockActions: Action[] = [
-  { id: "1",  reference: "CAPA-2026-018", title: "Révision des paramètres de soudage TIG",         origin: "CAPA",        priority: "high",   status: "in_progress", assignedTo: "Jean Dupont",    dueDate: new Date("2026-07-15"), progress: 60 },
-  { id: "2",  reference: "AUD-2026-010",  title: "Mise à jour du plan de formation HSE",            origin: "Audit",       priority: "high",   status: "overdue",     assignedTo: "Sophie Moreau",  dueDate: new Date("2026-05-20"), progress: 30 },
-  { id: "3",  reference: "NC-2026-023",   title: "Correction du défaut soudage pièce P-456",        origin: "NC",          priority: "high",   status: "todo",        assignedTo: "Jean Dupont",    dueDate: new Date("2026-07-01"), progress: 0  },
-  { id: "4",  reference: "REC-2026-003",  title: "Traitement défaut critique lot expédié",          origin: "Réclamation", priority: "high",   status: "in_progress", assignedTo: "Marie Martin",   dueDate: new Date("2026-06-09"), progress: 45 },
-  { id: "5",  reference: "R-2026-039",    title: "Renforcement pare-feu et sauvegardes SI",         origin: "Risque",      priority: "high",   status: "in_progress", assignedTo: "Marc Leroy",     dueDate: new Date("2026-08-01"), progress: 20 },
-  { id: "6",  reference: "AME-2026-004",  title: "Digitalisation fiches de contrôle production",   origin: "Amélioration",priority: "medium", status: "todo",        assignedTo: "Pierre Bernard", dueDate: new Date("2026-09-30"), progress: 0  },
-  { id: "7",  reference: "CAPA-2026-016", title: "Mise en place maintenance préventive équipements",origin: "CAPA",        priority: "medium", status: "in_progress", assignedTo: "Pierre Bernard", dueDate: new Date("2026-08-01"), progress: 15 },
-  { id: "8",  reference: "AUD-2026-009",  title: "Révision procédure travaux extérieurs",          origin: "Audit",       priority: "medium", status: "overdue",     assignedTo: "Luc Petit",      dueDate: new Date("2026-06-01"), progress: 10 },
-  { id: "9",  reference: "NC-2026-018",   title: "Réparation et isolation chambre froide C2",      origin: "NC",          priority: "medium", status: "in_progress", assignedTo: "Claire Durand",  dueDate: new Date("2026-07-30"), progress: 70 },
-  { id: "10", reference: "R-2026-035",    title: "Mise en place stock de sécurité matières clés",  origin: "Risque",      priority: "medium", status: "todo",        assignedTo: "Pierre Bernard", dueDate: new Date("2026-09-01"), progress: 0  },
-  { id: "11", reference: "AME-2026-003",  title: "Amélioration emballage pièces fragiles",         origin: "Amélioration",priority: "medium", status: "in_progress", assignedTo: "Jean Dupont",    dueDate: new Date("2026-07-15"), progress: 50 },
-  { id: "12", reference: "CAPA-2026-012", title: "Audit interne procédures consignation",          origin: "CAPA",        priority: "low",    status: "done",        assignedTo: "Luc Petit",      dueDate: new Date("2026-06-10"), progress: 100},
-  { id: "13", reference: "AUD-2026-008",  title: "Mise à jour plan de surveillance qualité",       origin: "Audit",       priority: "low",    status: "todo",        assignedTo: "Sophie Moreau",  dueDate: new Date("2026-10-01"), progress: 0  },
-  { id: "14", reference: "NC-2026-017",   title: "Correction étiquetage produit fini P-789",       origin: "NC",          priority: "low",    status: "done",        assignedTo: "Marc Leroy",     dueDate: new Date("2026-06-01"), progress: 100},
-  { id: "15", reference: "REC-2026-005",  title: "Validation fournisseur Chimie Provence",         origin: "Réclamation", priority: "high",   status: "in_progress", assignedTo: "Pierre Bernard", dueDate: new Date("2026-06-18"), progress: 55 },
-  { id: "16", reference: "R-2026-042",    title: "Révision du système documentaire qualité",       origin: "Risque",      priority: "medium", status: "in_progress", assignedTo: "Sophie Moreau",  dueDate: new Date("2026-08-15"), progress: 35 },
-  { id: "17", reference: "AME-2026-005",  title: "Mise en place tableau de bord fournisseurs",     origin: "Amélioration",priority: "low",    status: "todo",        assignedTo: "Pierre Bernard", dueDate: new Date("2026-11-30"), progress: 0  },
-  { id: "18", reference: "CAPA-2026-009", title: "Réorganisation zone de stockage entrepôt",       origin: "CAPA",        priority: "low",    status: "done",        assignedTo: "Sophie Moreau",  dueDate: new Date("2026-05-30"), progress: 100},
-]
-
-const originConfig: Record<Origin, { icon: React.ComponentType<{ className?: string }>; color: string }> = {
-  CAPA:        { icon: CheckSquare,           color: "bg-blue-100 text-blue-700" },
-  Audit:       { icon: ClipboardList,         color: "bg-purple-100 text-purple-700" },
-  NC:          { icon: AlertTriangle,         color: "bg-red-100 text-red-700" },
-  Réclamation: { icon: MessageSquareWarning,  color: "bg-orange-100 text-orange-700" },
-  Risque:      { icon: ShieldAlert,           color: "bg-rose-100 text-rose-700" },
-  Amélioration:{ icon: Lightbulb,             color: "bg-teal-100 text-teal-700" },
+const originConfig: Record<ActionOrigin, { icon: React.ComponentType<{ className?: string }>; color: string }> = {
+  CAPA:            { icon: CheckSquare,           color: "bg-blue-100 text-blue-700" },
+  Audit:           { icon: ClipboardList,         color: "bg-purple-100 text-purple-700" },
+  NC:              { icon: AlertTriangle,         color: "bg-red-100 text-red-700" },
+  Réclamation:     { icon: MessageSquareWarning,  color: "bg-orange-100 text-orange-700" },
+  Risque:          { icon: ShieldAlert,           color: "bg-rose-100 text-rose-700" },
+  Amélioration:    { icon: Lightbulb,             color: "bg-teal-100 text-teal-700" },
+  Réglementaire:   { icon: Scale,                 color: "bg-emerald-100 text-emerald-700" },
+  "Revue Direction": { icon: Award,               color: "bg-indigo-100 text-indigo-700" },
 }
 
-const priorityConfig: Record<Priority, { label: string; variant: "destructive" | "warning" | "secondary" }> = {
+const priorityConfig: Record<ActionPriority, { label: string; variant: "destructive" | "warning" | "secondary" }> = {
   high:   { label: "Haute",   variant: "destructive" },
   medium: { label: "Moyenne", variant: "warning" },
   low:    { label: "Basse",   variant: "secondary" },
@@ -93,21 +61,34 @@ const statusConfig: Record<ActionStatus, { label: string; variant: "destructive"
 export default function ActionPlanPage() {
   const router = useRouter()
   const { toast } = useToast()
+  const { actions, updateActionStatus } = useQhseStore()
 
-  function handleExport(rows: Action[]) {
-    const data = rows.length ? rows : mockActions
-    downloadCsv("plan-actions", ["Référence","Action","Origine","Priorité","Statut","Assigné à","Avancement (%)","Échéance"],
-      data.map((a) => [a.reference, a.title, a.origin, priorityConfig[a.priority].label, statusConfig[a.status].label, a.assignedTo, a.progress, a.dueDate]))
+  function handleExport(rows: ActionPlanItem[]) {
+    const data = rows.length ? rows : actions
+    downloadCsv(
+      "plan-actions",
+      ["Référence", "Action", "Origine", "Priorité", "Statut", "Assigné à", "Avancement (%)", "Échéance"],
+      data.map((a) => [
+        a.reference,
+        a.title,
+        a.origin,
+        priorityConfig[a.priority].label,
+        statusConfig[a.status].label,
+        a.assignedTo,
+        a.progress,
+        a.dueDate,
+      ])
+    )
     toast({ title: "Export réussi", description: `${data.length} actions exportées en CSV.` })
   }
 
-  const total     = mockActions.length
-  const overdue   = mockActions.filter((a) => a.status === "overdue").length
-  const inProgress= mockActions.filter((a) => a.status === "in_progress").length
-  const done      = mockActions.filter((a) => a.status === "done").length
-  const donePct   = Math.round((done / total) * 100)
+  const total = actions.length
+  const overdue = actions.filter((a) => a.status === "overdue" || (new Date(a.dueDate) < today && a.status !== "done")).length
+  const inProgress = actions.filter((a) => a.status === "in_progress").length
+  const done = actions.filter((a) => a.status === "done").length
+  const donePct = total > 0 ? Math.round((done / total) * 100) : 0
 
-  const columns: DataTableColumn<Action>[] = [
+  const columns: DataTableColumn<ActionPlanItem>[] = [
     {
       key: "reference",
       header: "Référence",
@@ -173,10 +154,11 @@ export default function ActionPlanPage() {
       sortValue: (a) => a.dueDate,
       hideOnMobile: true,
       cell: (a) => {
-        const overdue = a.dueDate < today && a.status !== "done"
+        const d = new Date(a.dueDate)
+        const overdue = d < today && a.status !== "done"
         return (
           <span className={`text-sm ${overdue ? "font-medium text-red-600" : "text-gray-600"}`}>
-            {format(a.dueDate, "dd MMM yyyy", { locale: fr })}
+            {format(d, "dd MMM yyyy", { locale: fr })}
           </span>
         )
       },
@@ -187,7 +169,7 @@ export default function ActionPlanPage() {
     <div className="space-y-6">
       <PageHeader
         title="Plan d'actions global"
-        description="Vue consolidée de toutes les actions CAPA, audits, NC, réclamations et risques"
+        description="Vue consolidée de toutes les actions CAPA, audits, NC, réclamations, conformité et revue de direction"
         icon={ListTodo}
       />
 
@@ -201,17 +183,28 @@ export default function ActionPlanPage() {
       <Card>
         <CardContent className="p-4">
           <DataTable
-            data={mockActions}
+            data={actions}
             columns={columns}
             getRowId={(a) => a.id}
             searchPlaceholder="Rechercher une action..."
-            searchAccessor={(a) => `${a.title} ${a.reference} ${a.assignedTo}`}
+            searchAccessor={(a) => `${a.title} ${a.reference} ${a.assignedTo} ${a.origin}`}
             filters={[
               {
                 key: "origin",
                 label: "Origine",
                 value: (a) => a.origin,
-                options: (["CAPA","Audit","NC","Réclamation","Risque","Amélioration"] as Origin[]).map((o) => ({ value: o, label: o })),
+                options: (
+                  [
+                    "CAPA",
+                    "Audit",
+                    "NC",
+                    "Réclamation",
+                    "Risque",
+                    "Amélioration",
+                    "Réglementaire",
+                    "Revue Direction",
+                  ] as ActionOrigin[]
+                ).map((o) => ({ value: o, label: o })),
               },
               {
                 key: "priority",
@@ -242,7 +235,14 @@ export default function ActionPlanPage() {
             )}
             bulkActions={[
               { label: "Réassigner", icon: UserPlus,     onClick: (rows) => { toast({ title: `Réassignation en cours`, description: `${rows.length} action(s) marquées pour réassignation.` }) } },
-              { label: "Clôturer",   icon: CheckCircle2, onClick: (rows) => { toast({ title: `${rows.length} actions clôturées`, description: "Statut mis à jour avec succès." }) } },
+              {
+                label: "Clôturer",
+                icon: CheckCircle2,
+                onClick: (rows) => {
+                  rows.forEach((r) => updateActionStatus(r.id, "done", 100))
+                  toast({ title: `${rows.length} actions clôturées`, description: "Statut mis à jour avec succès dans le store." })
+                },
+              },
               { label: "Exporter CSV", icon: Download,   onClick: (rows) => handleExport(rows), variant: "outline" },
             ]}
             emptyMessage="Aucune action trouvée."

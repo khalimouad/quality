@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import {
   Bell, LogOut, User, Settings, Menu, Shield,
   AlertTriangle, CheckSquare, ClipboardList, FileText,
-  Clock, CheckCheck, X, Sparkles,
+  Clock, CheckCheck, X, Sparkles, Scale, Award,
 } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -21,49 +21,17 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { TopNav } from "@/components/layout/top-nav"
 import { cn } from "@/lib/utils"
+import { useQhseStore } from "@/lib/qhse-store"
 
-const mockNotifications = [
-  {
-    id: 1, read: false, type: "nc", icon: AlertTriangle,
-    color: "bg-red-100 text-red-600",
-    title: "NC-2026-020 en retard",
-    body: "La non-conformité dépasse son échéance de 3 jours.",
-    time: "Il y a 2 h",
-    href: "/non-conformances/1",
-  },
-  {
-    id: 2, read: false, type: "capa", icon: CheckSquare,
-    color: "bg-amber-100 text-amber-600",
-    title: "CAPA-2026-018 : action requise",
-    body: "3 actions en attente à valider avant le 15 juillet.",
-    time: "Il y a 4 h",
-    href: "/capa/1",
-  },
-  {
-    id: 3, read: false, type: "audit", icon: ClipboardList,
-    color: "bg-blue-100 text-blue-600",
-    title: "Audit planifié dans 7 jours",
-    body: "AUD-2026-012 — Audit interne ISO 9001 Production.",
-    time: "Hier",
-    href: "/audits/1",
-  },
-  {
-    id: 4, read: true, type: "doc", icon: FileText,
-    color: "bg-purple-100 text-purple-600",
-    title: "Document expiré",
-    body: "PRO-ENV-005 doit être révisé avant le 30 juin.",
-    time: "Il y a 2 j",
-    href: "/documents",
-  },
-  {
-    id: 5, read: true, type: "nc", icon: AlertTriangle,
-    color: "bg-green-100 text-green-600",
-    title: "NC-2026-021 clôturée",
-    body: "La non-conformité a été vérifiée et clôturée.",
-    time: "Il y a 3 j",
-    href: "/non-conformances/1",
-  },
-]
+const notifConfig: Record<string, { icon: React.ComponentType<{ className?: string }>; color: string }> = {
+  nc:         { icon: AlertTriangle, color: "bg-red-100 text-red-600" },
+  capa:       { icon: CheckSquare,   color: "bg-amber-100 text-amber-600" },
+  audit:      { icon: ClipboardList, color: "bg-blue-100 text-blue-600" },
+  doc:        { icon: FileText,      color: "bg-purple-100 text-purple-600" },
+  compliance: { icon: Scale,         color: "bg-emerald-100 text-emerald-600" },
+  review:     { icon: Award,         color: "bg-indigo-100 text-indigo-600" },
+  control:    { icon: Sparkles,      color: "bg-teal-100 text-teal-600" },
+}
 
 interface HeaderProps {
   userEmail?: string
@@ -74,15 +42,15 @@ interface HeaderProps {
 
 export function Header({ userEmail = "admin@qhse.fr", onMenuToggle, aiOpen = false, onAiToggle }: HeaderProps) {
   const router = useRouter()
-  const [notifications, setNotifications] = useState(mockNotifications)
+  const {
+    notifications,
+    markNotificationRead,
+    markAllNotificationsRead,
+    dismissNotification,
+  } = useQhseStore()
   const [notifOpen, setNotifOpen] = useState(false)
 
   const unreadCount = notifications.filter((n) => !n.read).length
-
-  const markAllRead = () => setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
-  const markRead = (id: number) => setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n))
-  const dismiss = (id: number) => setNotifications((prev) => prev.filter((n) => n.id !== id))
-
   const initials = userEmail.substring(0, 2).toUpperCase()
 
   return (
@@ -147,7 +115,7 @@ export function Header({ userEmail = "admin@qhse.fr", onMenuToggle, aiOpen = fal
               </div>
               {unreadCount > 0 && (
                 <button
-                  onClick={markAllRead}
+                  onClick={markAllNotificationsRead}
                   className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
                 >
                   <CheckCheck className="h-3.5 w-3.5" />
@@ -165,19 +133,20 @@ export function Header({ userEmail = "admin@qhse.fr", onMenuToggle, aiOpen = fal
                 </div>
               ) : (
                 notifications.map((n) => {
-                  const Icon = n.icon
+                  const cfg = notifConfig[n.type] || notifConfig.nc
+                  const Icon = cfg.icon
                   return (
                     <div
                       key={n.id}
                       className={`group relative flex items-start gap-3 border-b px-4 py-3 last:border-0 hover:bg-gray-50 transition-colors ${!n.read ? "bg-blue-50/40" : ""}`}
                     >
-                      <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${n.color}`}>
+                      <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${cfg.color}`}>
                         <Icon className="h-4 w-4" />
                       </div>
                       <Link
                         href={n.href}
                         className="flex-1 min-w-0"
-                        onClick={() => { markRead(n.id); setNotifOpen(false) }}
+                        onClick={() => { markNotificationRead(n.id); setNotifOpen(false) }}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <p className={`text-sm leading-tight ${!n.read ? "font-semibold text-gray-900" : "font-medium text-gray-700"}`}>
@@ -194,7 +163,7 @@ export function Header({ userEmail = "admin@qhse.fr", onMenuToggle, aiOpen = fal
                         </div>
                       </Link>
                       <button
-                        onClick={() => dismiss(n.id)}
+                        onClick={() => dismissNotification(n.id)}
                         className="absolute right-3 top-3 hidden h-5 w-5 items-center justify-center rounded-full text-gray-400 hover:bg-gray-200 hover:text-gray-600 group-hover:flex"
                       >
                         <X className="h-3 w-3" />

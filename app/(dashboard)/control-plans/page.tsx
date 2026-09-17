@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/dialog"
 import { downloadCsv } from "@/lib/csv"
 import { useToast } from "@/components/ui/use-toast"
+import { useQhseStore, saveStoredPVs } from "@/lib/qhse-store"
 
 export type ControlPhase = "reception" | "en_cours" | "produit_fini"
 export type Criticality = "Critique" | "Majeur" | "Mineur"
@@ -310,8 +311,8 @@ const verdictBadge: Record<InspectionVerdict, { label: string; variant: "success
 
 export default function ControlPlansPage() {
   const { toast } = useToast()
+  const { pvs, triggerNcFromPv } = useQhseStore()
   const [criteria, setCriteria] = useState<ControlCriterion[]>(initialCriteria)
-  const [records, setRecords] = useState<InspectionRecord[]>(initialRecords)
   const [activeTab, setActiveTab] = useState<string>("all_criteria")
   const [search, setSearch] = useState("")
   const [selectedPhaseFilter, setSelectedPhaseFilter] = useState<string>("all")
@@ -353,6 +354,9 @@ export default function ControlPlansPage() {
     const matchPhase = selectedPhaseFilter === "all" || c.phase === selectedPhaseFilter
     return matchSearch && matchPhase
   })
+
+  // Records from store
+  const records = pvs
 
   // Statistics
   const totalCriteria = criteria.length
@@ -440,41 +444,71 @@ export default function ControlPlansPage() {
       return
     }
 
-    const newPvNum = `PV-${pvPhase.substring(0, 3).toUpperCase()}-${String(records.length + 101).padStart(3, "0")}`
-    const hasNc = pvVerdict === "rejete" ? `NC-2026-${String(Math.floor(Math.random() * 20) + 25).padStart(3, "0")}` : undefined
+    const newPvNum = `PV-${pvPhase.substring(0, 3).toUpperCase()}-${String(pvs.length + 101).padStart(3, "0")}`
+    const critObj = criteria.find((c) => c.code === pvCriterionCode)
 
-    const newRec: InspectionRecord = {
-      id: `REC-${Date.now()}`,
-      pvNumber: newPvNum,
-      date: new Date(),
-      phase: pvPhase,
-      articleRef: pvArticleRef,
-      articleName: pvArticleName,
-      lotNumber: pvLot,
-      quantiteControlee: pvQty,
-      inspecteur: pvInspector,
-      valeurMesuree: pvMeasured,
-      criterionCode: pvCriterionCode,
-      verdict: pvVerdict,
-      commentaires: pvComments || "Contrôle effectué selon plan de contrôle en vigueur.",
-      ncLinked: hasNc,
+    if (pvVerdict === "rejete") {
+      const { nc } = triggerNcFromPv(
+        {
+          pvNumber: newPvNum,
+          phase: pvPhase,
+          articleRef: pvArticleRef,
+          articleName: pvArticleName,
+          lotNumber: pvLot,
+          quantiteControlee: pvQty,
+          inspecteur: pvInspector,
+          valeurMesuree: pvMeasured,
+          criterionCode: pvCriterionCode,
+          commentaires: pvComments || "Contrôle effectué selon plan de contrôle en vigueur.",
+        },
+        {
+          criticite: critObj?.criticite,
+          caracteristique: critObj?.caracteristique,
+        }
+      )
+
+      setIsPvOpen(false)
+      setPvArticleRef("")
+      setPvArticleName("")
+      setPvLot("")
+      setPvMeasured("")
+      setPvComments("")
+
+      toast({
+        title: "Procès-Verbal enregistré — ALERTE REJET",
+        description: `PV ${newPvNum} rejeté. Fiche ${nc.reference} générée avec mise en quarantaine immédiate du lot ${pvLot} !`,
+        variant: "destructive",
+      })
+    } else {
+      const newRec = {
+        id: `pv-${Date.now()}`,
+        pvNumber: newPvNum,
+        date: new Date().toISOString().slice(0, 10),
+        phase: pvPhase,
+        articleRef: pvArticleRef,
+        articleName: pvArticleName,
+        lotNumber: pvLot,
+        quantiteControlee: pvQty,
+        inspecteur: pvInspector,
+        valeurMesuree: pvMeasured,
+        criterionCode: pvCriterionCode,
+        verdict: pvVerdict,
+        commentaires: pvComments || "Contrôle effectué selon plan de contrôle en vigueur.",
+      }
+      saveStoredPVs([newRec, ...pvs])
+
+      setIsPvOpen(false)
+      setPvArticleRef("")
+      setPvArticleName("")
+      setPvLot("")
+      setPvMeasured("")
+      setPvComments("")
+
+      toast({
+        title: "Procès-Verbal enregistré",
+        description: `PV ${newPvNum} enregistré avec verdict : ${verdictBadge[pvVerdict].label}.`,
+      })
     }
-
-    setRecords([newRec, ...records])
-    setIsPvOpen(false)
-    setPvArticleRef("")
-    setPvArticleName("")
-    setPvLot("")
-    setPvMeasured("")
-    setPvComments("")
-
-    toast({
-      title: "Procès-Verbal enregistré",
-      description: pvVerdict === "rejete"
-        ? `PV ${newPvNum} enregistré : VERDICT REJETÉ. Non-conformité ${hasNc} générée automatiquement !`
-        : `PV ${newPvNum} enregistré avec verdict : ${verdictBadge[pvVerdict].label}.`,
-      variant: pvVerdict === "rejete" ? "destructive" : "default",
-    })
   }
 
   return (
@@ -696,7 +730,7 @@ export default function ControlPlansPage() {
                     <tr key={r.id} className="transition-colors hover:bg-gray-50/80">
                       <td className="px-4 py-3">
                         <span className="font-mono text-xs font-bold text-gray-900">{r.pvNumber}</span>
-                        <div className="text-xs text-gray-400">{format(r.date, "dd/MM/yyyy")}</div>
+                        <div className="text-xs text-gray-400">{format(new Date(r.date), "dd/MM/yyyy")}</div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="font-medium text-gray-900">{r.articleName}</div>

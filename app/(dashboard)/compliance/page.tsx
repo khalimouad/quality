@@ -51,6 +51,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { downloadCsv } from "@/lib/csv"
 import { useToast } from "@/components/ui/use-toast"
+import { triggerActionFromCompliance } from "@/lib/qhse-store"
 
 export type ComplianceDomain = "Sécurité (SST)" | "Environnement" | "Qualité" | "Client & Sectoriel"
 export type ComplianceStatus = "conforme" | "partiel" | "non_conforme" | "en_cours"
@@ -315,17 +316,67 @@ export default function CompliancePage() {
     })
   }
 
-  const handleUpdateStatus = (id: string, newStatus: ComplianceStatus) => {
+  const handleCreateActionForReq = (req: RegulatoryRequirement) => {
+    const act = triggerActionFromCompliance(req.reference, req.title, req.evaluator)
     setRequirements((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, status: newStatus, lastEvaluation: new Date() } : item))
+      prev.map((item) => (item.id === req.id ? { ...item, associatedAction: act.reference } : item))
     )
-    if (selectedReq && selectedReq.id === id) {
-      setSelectedReq((prev) => (prev ? { ...prev, status: newStatus, lastEvaluation: new Date() } : null))
+    if (selectedReq && selectedReq.id === req.id) {
+      setSelectedReq((prev) => (prev ? { ...prev, associatedAction: act.reference } : null))
     }
     toast({
-      title: "Statut mis à jour",
-      description: `L'exigence est maintenant marquée comme "${statusBadgeConfig[newStatus].label}".`,
+      title: "Action corrective créée",
+      description: `L'action ${act.reference} a été enregistrée dans le Plan d'Actions global.`,
     })
+  }
+
+  const handleUpdateStatus = (id: string, newStatus: ComplianceStatus) => {
+    let genActionRef: string | undefined = undefined
+    const target = requirements.find((r) => r.id === id)
+
+    if ((newStatus === "non_conforme" || newStatus === "partiel") && target && !target.associatedAction) {
+      const act = triggerActionFromCompliance(target.reference, target.title, target.evaluator)
+      genActionRef = act.reference
+    }
+
+    setRequirements((prev) =>
+      prev.map((item) => {
+        if (item.id === id) {
+          return {
+            ...item,
+            status: newStatus,
+            lastEvaluation: new Date(),
+            associatedAction: genActionRef || item.associatedAction,
+          }
+        }
+        return item
+      })
+    )
+    if (selectedReq && selectedReq.id === id) {
+      setSelectedReq((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: newStatus,
+              lastEvaluation: new Date(),
+              associatedAction: genActionRef || prev.associatedAction,
+            }
+          : null
+      )
+    }
+
+    if (genActionRef) {
+      toast({
+        title: "Écart constaté — Action corrective générée",
+        description: `Exigence "${statusBadgeConfig[newStatus].label}". Action ${genActionRef} créée et injectée dans le Plan d'Actions !`,
+        variant: "destructive",
+      })
+    } else {
+      toast({
+        title: "Statut mis à jour",
+        description: `L'exigence est maintenant marquée comme "${statusBadgeConfig[newStatus].label}".`,
+      })
+    }
   }
 
   return (
@@ -608,21 +659,37 @@ export default function CompliancePage() {
                 </div>
               </div>
 
-              {selectedReq.associatedAction && (
+              {selectedReq.associatedAction ? (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                   <div className="flex items-center gap-2 text-amber-800 font-semibold text-xs">
                     <AlertTriangle className="h-4 w-4" />
                     Action corrective de mise en conformité engagée
                   </div>
-                  <p className="mt-1 text-xs text-amber-900">{selectedReq.associatedAction}</p>
+                  <p className="mt-1 text-xs text-amber-900 font-mono font-bold">{selectedReq.associatedAction}</p>
                   <Link
-                    href="/capa"
+                    href="/action-plan"
                     className="mt-2 inline-flex items-center text-xs font-semibold text-blue-700 hover:underline"
                   >
-                    Voir l&apos;action dans le module CAPA <ArrowRight className="ml-1 h-3 w-3" />
+                    Voir l&apos;action dans le Plan d&apos;Actions global <ArrowRight className="ml-1 h-3 w-3" />
                   </Link>
                 </div>
-              )}
+              ) : (selectedReq.status === "partiel" || selectedReq.status === "non_conforme") ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <p className="text-xs font-semibold text-red-800">Écart de conformité non couvert</p>
+                      <p className="text-xs text-red-600">Aucune action corrective liée à cette exigence.</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="h-8 text-xs bg-red-600 hover:bg-red-700 text-white"
+                      onClick={() => handleCreateActionForReq(selectedReq)}
+                    >
+                      + Générer Action de Remédiation
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
 
               {/* Quick Status Change */}
               <div className="border-t pt-3">

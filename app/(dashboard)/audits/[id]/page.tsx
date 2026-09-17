@@ -21,6 +21,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
 } from "@/components/ui/dialog"
 import { useToast } from "@/components/ui/use-toast"
+import { triggerNcFromAudit, triggerCapaFromAudit, type Severity } from "@/lib/qhse-store"
 
 const mockAudit = {
   id: "1",
@@ -126,11 +127,35 @@ export default function AuditDetailPage() {
 
   function handleCreateNC() {
     if (!ncDialog) return
-    const ref = `NC-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`
-    setFindings((prev) => prev.map((f) => f.id === ncDialog.id ? { ...f, linkedNC: ref } : f))
-    setTimeline((prev) => [...prev, { date: new Date(), event: `${ref} créée depuis écart #${ncDialog.id}`, type: "nc" }])
+    const created = triggerNcFromAudit(
+      mockAudit.reference,
+      ncDialog.description,
+      ncResponsible,
+      ncSeverity as Severity
+    )
+    setFindings((prev) => prev.map((f) => (f.id === ncDialog.id ? { ...f, linkedNC: created.reference } : f)))
+    setTimeline((prev) => [
+      ...prev,
+      { date: new Date(), event: `${created.reference} créée depuis écart #${ncDialog.id}`, type: "nc" },
+    ])
     setNcDialog(null)
-    toast({ title: "NC créée avec succès", description: `${ref} a été générée et liée à cet écart d'audit.` })
+    toast({
+      title: "NC créée avec succès",
+      description: `${created.reference} a été injectée dans le registre des non-conformités.`,
+    })
+  }
+
+  function handleCreateCapaFromFinding(f: Finding) {
+    const created = triggerCapaFromAudit(mockAudit.reference, f.description, mockAudit.auditor)
+    setFindings((prev) => prev.map((item) => (item.id === f.id ? { ...item, linkedCapa: created.reference } : item)))
+    setTimeline((prev) => [
+      ...prev,
+      { date: new Date(), event: `${created.reference} créée depuis écart #${f.id}`, type: "action" },
+    ])
+    toast({
+      title: "CAPA 8D générée",
+      description: `${created.reference} a été créée et ajoutée au Plan d'Actions.`,
+    })
   }
 
   function handleAddFinding() {
@@ -254,16 +279,20 @@ export default function AuditDetailPage() {
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${findingBadge[f.type] ?? "bg-gray-100 text-gray-600"}`}>{f.type}</span>
                 {f.linkedNC && (
-                  <Link href="/non-conformances/1">
-                    <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 hover:bg-red-200 cursor-pointer">{f.linkedNC}</span>
+                  <Link href="/non-conformances">
+                    <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 hover:bg-red-200 cursor-pointer">
+                      NC: {f.linkedNC}
+                    </span>
                   </Link>
                 )}
                 {f.linkedCapa && (
-                  <Link href="/capa/1">
-                    <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700 hover:bg-purple-200 cursor-pointer">{f.linkedCapa}</span>
+                  <Link href="/capa">
+                    <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700 hover:bg-purple-200 cursor-pointer">
+                      CAPA: {f.linkedCapa}
+                    </span>
                   </Link>
                 )}
-                <div className="ml-auto flex gap-1.5">
+                <div className="ml-auto flex items-center gap-1.5">
                   {f.type === "NC" && !f.linkedNC && (
                     <button
                       onClick={() => openNcDialog(f)}
@@ -271,6 +300,15 @@ export default function AuditDetailPage() {
                     >
                       <Plus className="h-3 w-3" />
                       Créer NC
+                    </button>
+                  )}
+                  {!f.linkedCapa && (
+                    <button
+                      onClick={() => handleCreateCapaFromFinding(f)}
+                      className="flex items-center gap-1 rounded-lg border border-purple-200 bg-purple-50 px-2 py-1 text-[11px] font-medium text-purple-700 hover:bg-purple-100 transition-colors"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Générer CAPA
                     </button>
                   )}
                 </div>

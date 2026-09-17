@@ -20,6 +20,16 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useToast } from "@/components/ui/use-toast"
+import {
+  getStoredCAPAs,
+  saveStoredCAPAs,
+  getStoredActions,
+  saveStoredActions,
+  pushNotification,
+  type CAPA,
+  type CAPAType,
+  type ActionPlanItem,
+} from "@/lib/qhse-store"
 
 const capaSchema = z.object({
   title: z.string().min(5, "Titre requis (min 5 caractères)"),
@@ -51,10 +61,48 @@ export default function NewCapaPage() {
 
   const onSubmit = async (data: CapaFormData) => {
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 1000))
+    const currentCAPAs = getStoredCAPAs()
+    const currentActions = getStoredActions()
+    const nextNum = currentCAPAs.length + 19
+    const newRef = `CAPA-2026-${String(nextNum).padStart(3, "0")}`
+    const createdCapa: CAPA = {
+      id: `capa-${Date.now()}`,
+      reference: newRef,
+      title: data.title,
+      type: data.type as CAPAType,
+      status: "open",
+      ncRef: data.ncRef || null,
+      assignedTo: data.assignedTo,
+      dueDate: data.dueDate,
+      progress: 0,
+      createdAt: new Date().toISOString().slice(0, 10),
+      description: data.description,
+      rootCause: data.rootCause,
+    }
+    const createdAction: ActionPlanItem = {
+      id: `act-${Date.now()}`,
+      reference: newRef,
+      title: data.title,
+      origin: "CAPA",
+      priority: "medium",
+      status: "todo",
+      assignedTo: data.assignedTo,
+      dueDate: data.dueDate,
+      progress: 0,
+      sourceId: createdCapa.id,
+    }
+    saveStoredCAPAs([createdCapa, ...currentCAPAs])
+    saveStoredActions([createdAction, ...currentActions])
+    pushNotification({
+      type: "capa",
+      title: `Nouvelle CAPA : ${newRef}`,
+      body: data.title,
+      time: "À l'instant",
+      href: "/capa",
+    })
     toast({
-      title: "CAPA créée",
-      description: "L'action corrective/préventive a été enregistrée.",
+      title: "CAPA créée avec succès",
+      description: `L'action ${newRef} a été enregistrée et ajoutée au Plan d'Actions.`,
     })
     router.push("/capa")
   }

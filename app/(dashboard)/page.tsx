@@ -48,6 +48,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { StatCard } from "@/components/ui/stat-card"
+import { useQhseStore } from "@/lib/qhse-store"
 
 const ncTrendData = [
   { month: "Jan", ouvertes: 4, fermées: 2 },
@@ -212,6 +213,9 @@ const pdcaPillars = [
 
 export default function DashboardPage() {
   const today = format(new Date(), "EEEE d MMMM yyyy", { locale: fr })
+  const { ncs, capas, pvs } = useQhseStore()
+  const openNcs = ncs.filter((n) => n.status === "open").length
+  const activeCapas = capas.filter((c) => c.status === "in_progress" || c.status === "open").length
 
   return (
     <div className="space-y-6">
@@ -317,16 +321,46 @@ export default function DashboardPage() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Link href="/non-conformances">
-          <StatCard title="Non-Conformités ouvertes" value={14} icon={AlertTriangle} iconColor="text-red-600" iconBg="bg-red-50" change="+3 ce mois" trend="up" />
+          <StatCard
+            title="Non-Conformités ouvertes"
+            value={openNcs}
+            icon={AlertTriangle}
+            iconColor="text-red-600"
+            iconBg="bg-red-50"
+            change={`${ncs.length} fiches au registre`}
+            trend="up"
+          />
         </Link>
         <Link href="/capa">
-          <StatCard title="Actions CAPA en cours" value={20} icon={CheckSquare} iconColor="text-amber-600" iconBg="bg-amber-50" change="-2 ce mois" trend="down" />
+          <StatCard
+            title="Actions CAPA en cours"
+            value={activeCapas}
+            icon={CheckSquare}
+            iconColor="text-amber-600"
+            iconBg="bg-amber-50"
+            change={`${capas.length} actions suivies`}
+            trend="down"
+          />
         </Link>
         <Link href="/compliance">
-          <StatCard title="Conformité Réglementaire" value="92%" icon={Scale} iconColor="text-emerald-600" iconBg="bg-emerald-50" hint="9 exigences suivies" />
+          <StatCard
+            title="Conformité Réglementaire"
+            value="92%"
+            icon={Scale}
+            iconColor="text-emerald-600"
+            iconBg="bg-emerald-50"
+            hint="Veille active ISO & Légale"
+          />
         </Link>
         <Link href="/control-plans">
-          <StatCard title="Contrôles Qualité / PV" value={24} icon={FileCheck2} iconColor="text-blue-600" iconBg="bg-blue-50" change="100% acceptés ce mois" />
+          <StatCard
+            title="Contrôles Qualité / PV"
+            value={pvs.length}
+            icon={FileCheck2}
+            iconColor="text-blue-600"
+            iconBg="bg-blue-50"
+            change={`${pvs.filter((p) => p.verdict === "rejete").length} rejet(s) détecté(s)`}
+          />
         </Link>
       </div>
 

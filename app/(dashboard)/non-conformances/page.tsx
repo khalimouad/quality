@@ -24,55 +24,28 @@ import { Card, CardContent } from "@/components/ui/card"
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table"
 import { useToast } from "@/components/ui/use-toast"
 import { downloadCsv } from "@/lib/csv"
+import { useQhseStore, type NonConformance } from "@/lib/qhse-store"
 
-interface NC {
-  id: string
-  reference: string
-  title: string
-  status: "open" | "in_progress" | "closed"
-  severity: "critical" | "major" | "minor" | "observation"
-  source: string
-  detectedBy: string
-  detectedAt: Date
-  dueDate: Date
-}
-
-const mockNCs: NC[] = [
-  { id: "1", reference: "NC-2024-023", title: "Défaut de soudage sur pièce P-456", status: "open", severity: "major", source: "Production", detectedBy: "Jean Dupont", detectedAt: new Date("2024-06-01"), dueDate: new Date("2024-07-01") },
-  { id: "2", reference: "NC-2024-022", title: "Non-conformité documentaire procédure HSE", status: "in_progress", severity: "minor", source: "Audit interne", detectedBy: "Marie Martin", detectedAt: new Date("2024-05-20"), dueDate: new Date("2024-06-20") },
-  { id: "3", reference: "NC-2024-021", title: "Dépassement des délais de calibration", status: "closed", severity: "major", source: "Contrôle qualité", detectedBy: "Pierre Bernard", detectedAt: new Date("2024-05-10"), dueDate: new Date("2024-06-10") },
-  { id: "4", reference: "NC-2024-020", title: "Matière première hors spécifications", status: "open", severity: "critical", source: "Réception", detectedBy: "Sophie Moreau", detectedAt: new Date("2024-05-05"), dueDate: new Date("2024-05-20") },
-  { id: "5", reference: "NC-2024-019", title: "EPI non port par opérateur", status: "closed", severity: "minor", source: "HSE", detectedBy: "Luc Petit", detectedAt: new Date("2024-04-28"), dueDate: new Date("2024-05-28") },
-  { id: "6", reference: "NC-2024-018", title: "Écart de température chambre froide", status: "in_progress", severity: "major", source: "Maintenance", detectedBy: "Claire Durand", detectedAt: new Date("2024-04-22"), dueDate: new Date("2024-05-22") },
-  { id: "7", reference: "NC-2024-017", title: "Étiquetage produit incorrect", status: "open", severity: "minor", source: "Expédition", detectedBy: "Marc Leroy", detectedAt: new Date("2024-04-18"), dueDate: new Date("2024-05-18") },
-  { id: "8", reference: "NC-2024-016", title: "Fuite huile hydraulique presse 3", status: "closed", severity: "critical", source: "Production", detectedBy: "Jean Dupont", detectedAt: new Date("2024-04-10"), dueDate: new Date("2024-04-25") },
-  { id: "9", reference: "NC-2024-015", title: "Observation rangement zone stockage", status: "closed", severity: "observation", source: "Audit interne", detectedBy: "Sophie Moreau", detectedAt: new Date("2024-04-05"), dueDate: new Date("2024-05-05") },
-  { id: "10", reference: "NC-2024-014", title: "Retard livraison fournisseur Métal SA", status: "in_progress", severity: "minor", source: "Achats", detectedBy: "Pierre Bernard", detectedAt: new Date("2024-03-28"), dueDate: new Date("2024-04-28") },
-  { id: "11", reference: "NC-2024-013", title: "Calibre de contrôle endommagé", status: "open", severity: "major", source: "Contrôle qualité", detectedBy: "Marie Martin", detectedAt: new Date("2024-03-20"), dueDate: new Date("2024-04-20") },
-  { id: "12", reference: "NC-2024-012", title: "Manquement procédure consignation", status: "closed", severity: "critical", source: "HSE", detectedBy: "Luc Petit", detectedAt: new Date("2024-03-12"), dueDate: new Date("2024-03-27") },
-  { id: "13", reference: "NC-2024-011", title: "Observation propreté vestiaires", status: "open", severity: "observation", source: "HSE", detectedBy: "Claire Durand", detectedAt: new Date("2024-03-05"), dueDate: new Date("2024-04-05") },
-]
-
-const statusLabels: Record<NC["status"], string> = {
+const statusLabels: Record<NonConformance["status"], string> = {
   open: "Ouverte",
   in_progress: "En cours",
   closed: "Fermée",
 }
 
-const severityLabels: Record<NC["severity"], string> = {
+const severityLabels: Record<NonConformance["severity"], string> = {
   critical: "Critique",
   major: "Majeure",
   minor: "Mineure",
   observation: "Observation",
 }
 
-const statusVariant: Record<NC["status"], "destructive" | "warning" | "success"> = {
+const statusVariant: Record<NonConformance["status"], "destructive" | "warning" | "success"> = {
   open: "destructive",
   in_progress: "warning",
   closed: "success",
 }
 
-const severityVariant: Record<NC["severity"], "destructive" | "warning" | "outline" | "secondary"> = {
+const severityVariant: Record<NonConformance["severity"], "destructive" | "warning" | "outline" | "secondary"> = {
   critical: "destructive",
   major: "warning",
   minor: "outline",
@@ -82,34 +55,65 @@ const severityVariant: Record<NC["severity"], "destructive" | "warning" | "outli
 export default function NonConformancesPage() {
   const router = useRouter()
   const { toast } = useToast()
+  const { ncs, triggerCapaFromNc, updateNcStatus } = useQhseStore()
 
-  function handleExport(rows: NC[]) {
-    const data = rows.length ? rows : mockNCs
-    downloadCsv("non-conformances", ["Référence","Titre","Sévérité","Statut","Source","Détecté par","Date détection","Échéance"],
-      data.map((n) => [n.reference, n.title, severityLabels[n.severity], statusLabels[n.status], n.source, n.detectedBy, n.detectedAt, n.dueDate]))
+  function handleExport(rows: NonConformance[]) {
+    const data = rows.length ? rows : ncs
+    downloadCsv(
+      "non-conformances",
+      ["Référence", "Titre", "Sévérité", "Statut", "Source", "Détecté par", "Date détection", "Échéance", "Quarantaine", "CAPA liée"],
+      data.map((n) => [
+        n.reference,
+        n.title,
+        severityLabels[n.severity],
+        statusLabels[n.status],
+        n.source,
+        n.detectedBy,
+        n.detectedAt,
+        n.dueDate,
+        n.quarantine ? "OUI" : "NON",
+        n.capaRef || "Aucune",
+      ])
+    )
     toast({ title: "Export réussi", description: `${data.length} NC exportées en CSV.` })
   }
 
-  const total = mockNCs.length
-  const open = mockNCs.filter((n) => n.status === "open").length
-  const inProgress = mockNCs.filter((n) => n.status === "in_progress").length
-  const closed = mockNCs.filter((n) => n.status === "closed").length
+  const total = ncs.length
+  const open = ncs.filter((n) => n.status === "open").length
+  const inProgress = ncs.filter((n) => n.status === "in_progress").length
+  const closed = ncs.filter((n) => n.status === "closed").length
 
-  const columns: DataTableColumn<NC>[] = [
+  const columns: DataTableColumn<NonConformance>[] = [
     {
       key: "reference",
       header: "Référence",
       sortValue: (n) => n.reference,
-      cell: (n) => <span className="font-mono text-xs text-gray-500">{n.reference}</span>,
+      cell: (n) => <span className="font-mono text-xs font-semibold text-gray-700">{n.reference}</span>,
     },
     {
       key: "title",
-      header: "Titre",
+      header: "Titre & Contexte",
       sortValue: (n) => n.title,
       cell: (n) => (
-        <div className="flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" />
-          <span className="font-medium text-gray-900">{n.title}</span>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-red-500" />
+            <span className="font-medium text-gray-900">{n.title}</span>
+            {n.quarantine && (
+              <Badge variant="destructive" className="text-[10px] px-1.5 py-0 uppercase tracking-wider">
+                Quarantaine Lot
+              </Badge>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+            {n.lotNumber && <span>Lot: <strong className="font-mono text-gray-700">{n.lotNumber}</strong></span>}
+            {n.pvRef && <span>PV: <strong className="font-mono text-blue-600">{n.pvRef}</strong></span>}
+            {n.capaRef && (
+              <Link href="/capa" className="font-mono font-semibold text-purple-600 hover:underline">
+                → {n.capaRef}
+              </Link>
+            )}
+          </div>
         </div>
       ),
     },
@@ -144,14 +148,22 @@ export default function NonConformancesPage() {
       header: "Date",
       sortValue: (n) => n.detectedAt,
       hideOnMobile: true,
-      cell: (n) => <span className="text-sm text-gray-600">{format(n.detectedAt, "dd MMM yyyy", { locale: fr })}</span>,
+      cell: (n) => (
+        <span className="text-sm text-gray-600">
+          {format(new Date(n.detectedAt), "dd MMM yyyy", { locale: fr })}
+        </span>
+      ),
     },
     {
       key: "dueDate",
       header: "Échéance",
       sortValue: (n) => n.dueDate,
       hideOnMobile: true,
-      cell: (n) => <span className="text-sm text-gray-600">{format(n.dueDate, "dd MMM yyyy", { locale: fr })}</span>,
+      cell: (n) => (
+        <span className="text-sm text-gray-600">
+          {format(new Date(n.dueDate), "dd MMM yyyy", { locale: fr })}
+        </span>
+      ),
     },
   ]
 
@@ -180,11 +192,11 @@ export default function NonConformancesPage() {
       <Card>
         <CardContent className="p-4">
           <DataTable
-            data={mockNCs}
+            data={ncs}
             columns={columns}
             getRowId={(n) => n.id}
             searchPlaceholder="Rechercher par titre ou référence..."
-            searchAccessor={(n) => `${n.title} ${n.reference} ${n.detectedBy} ${n.source}`}
+            searchAccessor={(n) => `${n.title} ${n.reference} ${n.detectedBy} ${n.source} ${n.lotNumber || ""} ${n.pvRef || ""}`}
             filters={[
               {
                 key: "status",
@@ -211,6 +223,35 @@ export default function NonConformancesPage() {
             onRowClick={(n) => router.push(`/non-conformances/${n.id}`)}
             rowActions={(n) => (
               <div className="flex items-center justify-end gap-1">
+                {!n.capaRef ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs text-purple-700 border-purple-200 hover:bg-purple-50"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      const created = triggerCapaFromNc(n.reference)
+                      toast({
+                        title: "CAPA 8D générée",
+                        description: `Fiche ${created.reference} ouverte et liée à ${n.reference}.`,
+                      })
+                    }}
+                  >
+                    + CAPA 8D
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-purple-600 hover:underline"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      router.push("/capa")
+                    }}
+                  >
+                    {n.capaRef}
+                  </Button>
+                )}
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => router.push(`/non-conformances/${n.id}`)}>
                   <Eye className="h-4 w-4" />
                 </Button>
@@ -218,8 +259,15 @@ export default function NonConformancesPage() {
             )}
             bulkActions={[
               { label: "Exporter CSV", icon: CheckCheck, onClick: (rows) => handleExport(rows) },
-              { label: "Clôturer", icon: CheckCircle2, onClick: (rows) => { toast({ title: `${rows.length} NC clôturées`, description: "Statut mis à jour avec succès." }) }, variant: "outline" },
-              { label: "Supprimer", icon: Trash2, onClick: (rows) => { toast({ title: `${rows.length} NC supprimées`, description: "Les enregistrements ont été retirés.", variant: "destructive" }) }, variant: "destructive" },
+              {
+                label: "Clôturer",
+                icon: CheckCircle2,
+                onClick: (rows) => {
+                  rows.forEach((r) => updateNcStatus(r.id, "closed"))
+                  toast({ title: `${rows.length} NC clôturées`, description: "Statut mis à jour avec succès." })
+                },
+                variant: "outline",
+              },
             ]}
             emptyMessage="Aucune non-conformité."
           />

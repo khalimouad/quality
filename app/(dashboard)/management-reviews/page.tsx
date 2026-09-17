@@ -53,6 +53,7 @@ import {
 } from "@/components/ui/select"
 import { downloadCsv } from "@/lib/csv"
 import { useToast } from "@/components/ui/use-toast"
+import { deployReviewDecisions } from "@/lib/qhse-store"
 
 export type ReviewStatus = "planifiee" | "en_cours" | "cloturee"
 
@@ -261,6 +262,22 @@ export default function ManagementReviewsPage() {
     toast({
       title: "Revue de direction planifiée",
       description: `La revue ${created.reference} a été enregistrée au calendrier.`,
+    })
+  }
+
+  const handleDeployActions = () => {
+    if (!selectedReview.actionsEngagees || selectedReview.actionsEngagees.length === 0) {
+      toast({
+        title: "Aucune action à déployer",
+        description: "Cette revue ne contient aucune action enregistrée.",
+        variant: "destructive",
+      })
+      return
+    }
+    const deployed = deployReviewDecisions(selectedReview.reference, selectedReview.actionsEngagees)
+    toast({
+      title: "Actions déployées avec succès",
+      description: `${deployed.length} actions stratégiques de ${selectedReview.reference} ont été injectées dans le Plan d'Actions global !`,
     })
   }
 
@@ -565,11 +582,21 @@ export default function ManagementReviewsPage() {
                       Actions injectées directement dans le système CAPA de l&apos;entreprise
                     </CardDescription>
                   </div>
-                  <Link href="/capa">
-                    <Button variant="outline" size="sm" className="text-xs text-blue-600">
-                      Ouvrir le module CAPA <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      className="h-8 text-xs bg-purple-600 hover:bg-purple-700 text-white"
+                      onClick={handleDeployActions}
+                    >
+                      <Check className="mr-1.5 h-3.5 w-3.5" />
+                      Déployer dans le Plan d&apos;Actions
                     </Button>
-                  </Link>
+                    <Link href="/action-plan">
+                      <Button variant="outline" size="sm" className="h-8 text-xs text-blue-600">
+                        Plan d&apos;Actions <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                      </Button>
+                    </Link>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">

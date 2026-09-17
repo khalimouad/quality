@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useMemo } from "react"
+import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
@@ -20,10 +20,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
 } from "@/components/ui/dialog"
 import { useToast } from "@/components/ui/use-toast"
+import { useQhseStore, type NCStatus } from "@/lib/qhse-store"
 
-type NCStatus = "open" | "in_progress" | "closed"
-
-const mockNC = {
+const fallbackNC = {
   id: "1",
   reference: "NC-2026-023",
   title: "Défaut de soudage sur pièce P-456",
@@ -39,6 +38,7 @@ const mockNC = {
     "Lors du contrôle visuel de la pièce P-456, un défaut de soudage a été constaté. La soudure présente des porosités et un manque de fusion sur une longueur de 15 mm. Cette non-conformité impacte la résistance mécanique de l'assemblage.",
   immediateAction:
     "La pièce a été mise en quarantaine. La série de production a été suspendue dans l'attente de l'analyse des causes.",
+  capaRef: null as string | null,
   comments: [
     { id: 1, author: "Sophie Moreau", role: "Responsable QSE",   content: "Analyse des causes en cours. Les paramètres de soudage sont vérifiés.", createdAt: new Date("2026-06-02T09:30:00") },
     { id: 2, author: "Jean Dupont",   role: "Technicien",         content: "Le paramètre d'intensité était hors tolérance. Réglage effectué et test de validation en cours.", createdAt: new Date("2026-06-03T14:15:00") },
@@ -73,48 +73,81 @@ const timelineDot: Record<string, string> = {
 
 export default function NCDetailPage() {
   const router = useRouter()
+  const params = useParams()
   const { toast } = useToast()
+  const { ncs, triggerCapaFromNc, updateNcStatus } = useQhseStore()
 
-  const [status, setStatus]         = useState<NCStatus>(mockNC.status)
-  const [timeline, setTimeline]     = useState(mockNC.initialTimeline)
+  const ncParamId = params?.id as string
+  const currentNC = useMemo(() => {
+    const found = ncs.find((n) => n.id === ncParamId || n.reference === ncParamId)
+    if (!found) return fallbackNC
+    return {
+      ...fallbackNC,
+      id: found.id,
+      reference: found.reference,
+      title: found.title,
+      status: found.status,
+      severity: found.severity,
+      source: found.source,
+      detectedBy: found.detectedBy,
+      assignedTo: found.assignedTo,
+      detectedAt: new Date(found.detectedAt),
+      dueDate: new Date(found.dueDate),
+      description: found.description || fallbackNC.description,
+      immediateAction: found.immediateAction || fallbackNC.immediateAction,
+      capaRef: found.capaRef,
+    }
+  }, [ncs, ncParamId])
+
+  const [status, setStatus]         = useState<NCStatus>(currentNC.status)
+  const [timeline, setTimeline]     = useState(fallbackNC.initialTimeline)
   const [comment, setComment]       = useState("")
-  const [comments, setComments]     = useState(mockNC.comments)
+  const [comments, setComments]     = useState(fallbackNC.comments)
   const [capaOpen, setCapaOpen]     = useState(false)
-  const [createdCapa, setCreatedCapa] = useState<string | null>(null)
+  const [createdCapa, setCreatedCapa] = useState<string | null>(currentNC.capaRef || null)
   const [closeOpen, setCloseOpen]   = useState(false)
   const [closeReason, setCloseReason] = useState("")
 
   // CAPA form state
-  const [capaTitle, setCapaTitle]           = useState(`Correction : ${mockNC.title}`)
-  const [capaResponsible, setCapaResponsible] = useState(mockNC.assignedTo)
+  const [capaTitle, setCapaTitle]           = useState(`Correction : ${currentNC.title}`)
+  const [capaResponsible, setCapaResponsible] = useState(currentNC.assignedTo)
   const [capaDueDate, setCapaDueDate]       = useState(() => {
     const d = new Date(); d.setMonth(d.getMonth() + 1)
     return d.toISOString().slice(0, 10)
   })
 
-  const sev = severityMap[mockNC.severity]
-  const st  = statusMap[status]
+  const sev = severityMap[currentNC.severity] || severityMap.major
+  const st  = statusMap[status] || statusMap.open
 
   function handleCreateCapa() {
-    const ref = `CAPA-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`
-    setCreatedCapa(ref)
-    if (status === "open") setStatus("in_progress")
+    const created = triggerCapaFromNc(currentNC.reference, {
+      customTitle: capaTitle,
+      assignedTo: capaResponsible,
+      dueDate: capaDueDate,
+    })
+    setCreatedCapa(created.reference)
+    setStatus("in_progress")
+    updateNcStatus(currentNC.id, "in_progress")
     setTimeline((prev) => [
       ...prev,
-      { date: new Date(), event: `${ref} créée — ${capaTitle}`, type: "capa" },
+      { date: new Date(), event: `${created.reference} créée — ${capaTitle}`, type: "capa" },
     ])
     setCapaOpen(false)
-    toast({ title: "CAPA créée avec succès", description: `${ref} a été générée et liée à cette NC.` })
+    toast({
+      title: "CAPA 8D créée avec succès",
+      description: `${created.reference} a été générée et injectée dans le plan d'actions.`,
+    })
   }
 
   function handleCloseNC() {
     setStatus("closed")
+    updateNcStatus(currentNC.id, "closed")
     setTimeline((prev) => [
       ...prev,
       { date: new Date(), event: `NC clôturée${closeReason ? ` — ${closeReason}` : ""}`, type: "closed" },
     ])
     setCloseOpen(false)
-    toast({ title: "NC clôturée", description: `${mockNC.reference} est maintenant fermée.` })
+    toast({ title: "NC clôturée", description: `${currentNC.reference} est maintenant fermée.` })
   }
 
   function handleAddComment() {
@@ -135,11 +168,11 @@ export default function NCDetailPage() {
         </Button>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-mono text-xs text-gray-400">{mockNC.reference}</span>
+            <span className="font-mono text-xs text-gray-400">{currentNC.reference}</span>
             <Badge variant={st.variant} className="text-xs">{st.label}</Badge>
             <Badge variant={sev.variant} className="text-xs">{sev.label}</Badge>
           </div>
-          <h2 className="mt-0.5 text-lg font-bold leading-tight text-gray-900">{mockNC.title}</h2>
+          <h2 className="mt-0.5 text-lg font-bold leading-tight text-gray-900">{currentNC.title}</h2>
         </div>
       </div>
 
@@ -183,11 +216,11 @@ export default function NCDetailPage() {
       {/* ── Info strip ── */}
       <div className="flex gap-3 overflow-x-auto pb-1">
         {[
-          { icon: AlertTriangle, label: "Source",            value: mockNC.source },
-          { icon: User,          label: "Détecté par",       value: mockNC.detectedBy },
-          { icon: MapPin,        label: "Lieu",              value: mockNC.location },
-          { icon: Calendar,      label: "Date détection",    value: format(mockNC.detectedAt, "dd MMM yyyy", { locale: fr }) },
-          { icon: Clock,         label: "Échéance",          value: format(mockNC.dueDate, "dd MMM yyyy", { locale: fr }), red: status !== "closed" },
+          { icon: AlertTriangle, label: "Source",            value: currentNC.source },
+          { icon: User,          label: "Détecté par",       value: currentNC.detectedBy },
+          { icon: MapPin,        label: "Lieu",              value: currentNC.location },
+          { icon: Calendar,      label: "Date détection",    value: format(currentNC.detectedAt, "dd MMM yyyy", { locale: fr }) },
+          { icon: Clock,         label: "Échéance",          value: format(currentNC.dueDate, "dd MMM yyyy", { locale: fr }), red: status !== "closed" },
         ].map(({ icon: Icon, label, value, red }) => (
           <div key={label} className="flex shrink-0 flex-col rounded-xl border bg-white p-3 shadow-sm min-w-[120px]">
             <div className="flex items-center gap-1 text-gray-400">
@@ -208,10 +241,10 @@ export default function NCDetailPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 pb-4">
-          <p className="text-sm leading-relaxed text-gray-700">{mockNC.description}</p>
+          <p className="text-sm leading-relaxed text-gray-700">{currentNC.description}</p>
           <div className="rounded-xl bg-blue-50 p-3">
             <p className="mb-1 text-xs font-semibold text-blue-700">Action immédiate</p>
-            <p className="text-sm text-blue-800">{mockNC.immediateAction}</p>
+            <p className="text-sm text-blue-800">{currentNC.immediateAction}</p>
           </div>
         </CardContent>
       </Card>
@@ -333,7 +366,7 @@ export default function NCDetailPage() {
 
           <div className="space-y-4 py-2">
             <div className="rounded-xl bg-gray-50 p-3 text-xs text-gray-600">
-              <span className="font-semibold">NC liée :</span> {mockNC.reference} — {mockNC.title}
+              <span className="font-semibold">NC liée :</span> {currentNC.reference} — {currentNC.title}
             </div>
 
             <div className="space-y-1.5">
@@ -379,7 +412,7 @@ export default function NCDetailPage() {
 
           <div className="space-y-4 py-2">
             <p className="text-sm text-gray-600">
-              Confirmez la clôture de <span className="font-semibold">{mockNC.reference}</span>. Assurez-vous que les actions correctives ont été vérifiées et que l'efficacité a été confirmée.
+              Confirmez la clôture de <span className="font-semibold">{currentNC.reference}</span>. Assurez-vous que les actions correctives ont été vérifiées et que l'efficacité a été confirmée.
             </p>
             {!createdCapa && (
               <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
